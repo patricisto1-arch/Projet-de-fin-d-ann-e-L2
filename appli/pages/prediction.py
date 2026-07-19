@@ -3,22 +3,176 @@ import pandas as pd
 import numpy as np
 import pickle
 import plotly.graph_objects as go
+from pathlib import Path
 
 st.set_page_config(page_title="Prédiction", page_icon="🔍", layout="wide")
-st.title("🔍 Prédiction en temps réel")
-st.markdown("Saisissez les caractéristiques d'une transaction pour prédire si elle est frauduleuse.")
+
+# ─────────────────────────────────────────────────────────────
+# STYLE CSS PERSONNALISÉ — même thème marron deux tons
+# ─────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+    :root {
+        --brown-dark: #3E2723;
+        --brown: #6D4C41;
+        --brown-mid: #8D6E63;
+        --tan: #EFE3D7;
+        --cream: #FBF7F2;
+        --gold: #D9A441;
+        --terracotta: #C0625B;
+        --grey: #4A4038;
+    }
+
+    .stApp { background: var(--tan); }
+    .block-container { padding-top: 1.2rem; max-width: 100%; }
+
+    /* ── Filet de sécurité : texte natif Streamlit (captions, libellés de
+       widgets, markdown brut non encadré) forcé en couleur foncée.
+       :not([class]) ne cible que les éléments sans classe, donc ne touche
+       jamais mes blocs personnalisés (toujours classés). ── */
+    [data-testid="stMarkdownContainer"] p:not([class]),
+    [data-testid="stMarkdownContainer"] li:not([class]),
+    [data-testid="stMarkdownContainer"] span:not([class]),
+    [data-testid="stCaptionContainer"],
+    [data-testid="stCaptionContainer"] * {
+        color: var(--grey) !important;
+    }
+    [data-testid="stWidgetLabel"] p,
+    [data-testid="stWidgetLabel"] label {
+        color: var(--brown-dark) !important;
+        font-weight: 600;
+    }
+    .note-box {
+        background: var(--cream);
+        border: 1px solid #DDCBB8;
+        border-radius: 8px;
+        padding: 0.55rem 0.9rem;
+        color: var(--grey) !important;
+        font-size: 0.85rem;
+        margin-top: 0.5rem;
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] { background: var(--brown-dark) !important; }
+    section[data-testid="stSidebar"] * { color: #F1E4D8 !important; }
+    section[data-testid="stSidebar"] a[aria-current="page"] {
+        background-color: var(--gold) !important;
+        color: var(--brown-dark) !important;
+        font-weight: 700 !important;
+        border-radius: 8px;
+    }
+    section[data-testid="stSidebar"] a:hover {
+        background-color: rgba(217, 164, 65, 0.25) !important;
+        border-radius: 8px;
+    }
+    section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
+        background-color: var(--brown) !important;
+        border-color: var(--brown-mid) !important;
+    }
+
+    /* Barre supérieure Streamlit */
+    header[data-testid="stHeader"] { background: var(--brown-dark) !important; }
+    header[data-testid="stHeader"] * { color: #F1E4D8 !important; }
+
+    /* En-tête de page, encadré et centré */
+    .hero-box {
+        background: var(--brown-dark);
+        border-radius: 16px;
+        padding: 1.4rem 1rem;
+        margin-bottom: 1.5rem;
+        text-align: center;
+        box-shadow: 0 4px 16px rgba(62, 39, 35, 0.3);
+    }
+    .hero-title { font-size: 2.1rem; font-weight: 800; color: #FFFFFF; margin: 0; }
+    .hero-subtitle { font-size: 0.98rem; color: #EAD9C8; margin-top: 0.4rem; }
+
+    /* Titres de section : toujours encadrés, donc toujours lisibles */
+    .section-header-box {
+        background: var(--cream);
+        border: 1px solid #DDCBB8;
+        border-left: 6px solid var(--gold);
+        border-radius: 10px;
+        padding: 0.7rem 1rem;
+        margin: 0.4rem 0 1rem 0;
+    }
+    .section-header { font-size: 1.2rem; font-weight: 700; color: var(--brown-dark); margin: 0; }
+
+    /* Blocs pleine largeur */
+    .full-block {
+        background: var(--cream);
+        border: 1px solid #DDCBB8;
+        border-radius: 14px;
+        padding: 1.2rem 1.4rem;
+        color: var(--grey);
+        line-height: 1.7;
+    }
+
+    /* Résultat de prédiction */
+    .result-banner {
+        border-radius: 14px;
+        padding: 1.1rem 1.4rem;
+        font-size: 1.15rem;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    .result-fraud { background: #F6DEDC; color: #7A2E27; border: 2px solid var(--terracotta); }
+    .result-legit { background: #E3EEE0; color: #1B5E20; border: 2px solid #6B9E6E; }
+
+    /* Métriques natives st.metric */
+    div[data-testid="stMetric"] {
+        background: var(--cream);
+        border: 1px solid #DDCBB8;
+        border-radius: 12px;
+        padding: 0.8rem;
+    }
+    div[data-testid="stMetric"] label { color: var(--brown) !important; }
+    div[data-testid="stMetric"] div[data-testid="stMetricValue"] { color: var(--brown-dark) !important; }
+
+    /* Bouton principal */
+    button[kind="primary"] {
+        background-color: var(--brown-dark) !important;
+        border-color: var(--brown-dark) !important;
+    }
+    button[kind="primary"]:hover {
+        background-color: var(--brown) !important;
+        border-color: var(--brown) !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+def section_header(icon, text):
+    st.markdown(
+        f'<div class="section-header-box"><p class="section-header">{icon} {text}</p></div>',
+        unsafe_allow_html=True,
+    )
+
+
+st.markdown("""
+<div class="hero-box">
+    <p class="hero-title">🔍 Prédiction en temps réel</p>
+    <p class="hero-subtitle">Saisissez les caractéristiques d'une transaction pour prédire si elle est frauduleuse.</p>
+</div>
+""", unsafe_allow_html=True)
 
 # ── Chargement des modèles ─────────────────────────────────
+# Chemin robuste : remonte depuis prediction.py (appli/pages/) jusqu'à
+# appli/, où se trouve le dossier models/ — peu importe d'où la commande
+# streamlit est lancée
+APPLI_DIR = Path(__file__).resolve().parent.parent
+MODELS_DIR = APPLI_DIR / "models"
+
 @st.cache_resource
 def load_models():
     models = {}
-    with open('models/logistic_regression.pkl', 'rb') as f:
+    with open(MODELS_DIR / 'logistic_regression.pkl', 'rb') as f:
         models['Régression Logistique'] = pickle.load(f)
-    with open('models/random_forest.pkl', 'rb') as f:
+    with open(MODELS_DIR / 'random_forest.pkl', 'rb') as f:
         models['Random Forest'] = pickle.load(f)
-    with open('models/xgboost.pkl', 'rb') as f:
+    with open(MODELS_DIR / 'xgboost.pkl', 'rb') as f:
         models['XGBoost'] = pickle.load(f)
-    with open('models/isolation_forest.pkl', 'rb') as f:
+    with open(MODELS_DIR / 'isolation_forest.pkl', 'rb') as f:
         models['Isolation Forest'] = pickle.load(f)
     return models
 
@@ -37,7 +191,7 @@ seuil = st.sidebar.slider(
 )
 
 # ── Formulaire de saisie ───────────────────────────────────
-st.subheader("📝 Caractéristiques de la transaction")
+section_header("📝", "Caractéristiques de la transaction")
 
 col1, col2, col3 = st.columns(3)
 
@@ -81,7 +235,7 @@ if st.button("🔍 Analyser la transaction", type="primary",
 
     modele = models[modele_choisi]
     st.divider()
-    st.subheader(f"Résultats — {modele_choisi}")
+    section_header("📌", f"Résultats — {modele_choisi}")
 
     col_res1, col_res2 = st.columns([1, 1])
 
@@ -101,9 +255,15 @@ if st.button("🔍 Analyser la transaction", type="primary",
             prediction = 1 if proba >= seuil else 0
 
         if prediction == 1:
-            st.error("🚨 Transaction FRAUDULEUSE détectée !")
+            st.markdown(
+                '<div class="result-banner result-fraud">🚨 Transaction FRAUDULEUSE détectée !</div>',
+                unsafe_allow_html=True,
+            )
         else:
-            st.success("✅ Transaction LÉGITIME")
+            st.markdown(
+                '<div class="result-banner result-legit">✅ Transaction LÉGITIME</div>',
+                unsafe_allow_html=True,
+            )
 
         st.metric("Probabilité de fraude", f"{proba*100:.2f}%")
         st.metric("Modèle utilisé", modele_choisi)
@@ -111,35 +271,36 @@ if st.button("🔍 Analyser la transaction", type="primary",
 
     with col_res2:
         # Jauge de risque
-        couleur = "red" if proba > seuil else "green"
+        couleur = "#C0625B" if proba > seuil else "#3E7A3E"
         fig_gauge = go.Figure(go.Indicator(
             mode="gauge+number+delta",
             value=proba * 100,
             title={'text': "Niveau de risque (%)"},
             delta={'reference': seuil * 100,
-                   'increasing': {'color': "red"},
-                   'decreasing': {'color': "green"}},
+                   'increasing': {'color': "#C0625B"},
+                   'decreasing': {'color': "#3E7A3E"}},
             gauge={
                 'axis': {'range': [0, 100]},
                 'bar': {'color': couleur},
                 'steps': [
-                    {'range': [0, 30],  'color': "#c8e6c9"},
-                    {'range': [30, 70], 'color': "#fff9c4"},
-                    {'range': [70, 100],'color': "#ffcdd2"}
+                    {'range': [0, 30],  'color': "#DCEBDC"},
+                    {'range': [30, 70], 'color': "#F3E3C3"},
+                    {'range': [70, 100],'color': "#F0D4D1"}
                 ],
                 'threshold': {
-                    'line': {'color': "black", 'width': 3},
+                    'line': {'color': "#3E2723", 'width': 3},
                     'thickness': 0.8,
                     'value': seuil * 100
                 }
             }
         ))
-        fig_gauge.update_layout(height=300)
+        fig_gauge.update_layout(height=300, paper_bgcolor="#FBF7F2",
+                                 font_color="#3E2723")
         st.plotly_chart(fig_gauge, use_container_width=True)
 
     # Détail de la décision
     st.divider()
-    st.subheader("📊 Détail de la décision")
+    section_header("📊", "Détail de la décision")
     col_d1, col_d2, col_d3, col_d4 = st.columns(4)
     col_d1.metric("Montant", f"{amount:.2f} €")
     col_d2.metric("V14 (feature clé)", f"{v14:.2f}")
